@@ -1,0 +1,24 @@
+=== PANDUAN SETUP DEVELOPMENT BANK MINI SMK ===
+
+Jika baru saja men-download/clone kode ini di komputer baru, 
+JANGAN jalankan aplikasi sebelum membuat VENV. 
+Ikuti langkah-langkah ini di terminal VSCode:
+
+1. BUAT VIRTUAL ENVIRONMENT (VENV)
+   Ketik perintah ini di terminal:
+   python -m venv venv
+
+2. AKTIFKAN VENV
+   Ketik perintah ini di terminal:
+   venv\Scripts\activate
+   (Pastikan muncul tulisan "(venv)" di awal baris terminal)
+
+3. INSTALL SEMUA LIBRARY PYTHON
+   Ketik perintah ini untuk men-download otomatis semua kebutuhan:
+   pip install -r requirements.txt
+
+4. JALANKAN APLIKASI
+   Setelah selesai download, aplikasi siap dijalankan:
+   python main.py
+
+===============================================
