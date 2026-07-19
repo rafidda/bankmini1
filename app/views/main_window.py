@@ -20,8 +20,12 @@ from app.models.models import LoginLog
 from app.views.superadmin.user_management import UserManagementWidget
 # Import widget manajemen rekening untuk role admin
 from app.views.admin.account_management import AccountManagementWidget
+# Import widget manajemen siswa untuk role admin
+from app.views.admin.student_management import StudentManagementWidget
 # Import widget transaksi untuk role siswa
 from app.views.siswa.transaction_window import TransactionWidget
+# Import widget buka rekening untuk role siswa
+from app.views.siswa.account_create import AccountCreateWidget
 # Import widget riwayat transaksi yang akan digunakan bersama
 from app.views.shared.transaction_history import TransactionHistoryWidget
 # Import widget backup & restore
@@ -132,15 +136,19 @@ class MainWindow(QMainWindow):
             # Admin mendapatkan akses dalam bentuk tab
             tab_widget = QTabWidget()
 
-            # Tab 1: Kelola Rekening Nasabah
+            # Tab 1: Kelola Siswa (BARU)
+            student_management_widget = StudentManagementWidget(current_user_id=user_id)
+            tab_widget.addTab(student_management_widget, "Kelola Siswa")
+
+            # Tab 2: Kelola Rekening Nasabah
             account_management_widget = AccountManagementWidget(current_user_id=user_id)
             tab_widget.addTab(account_management_widget, "Kelola Rekening Nasabah")
 
-            # Tab 2: Riwayat Semua Transaksi
+            # Tab 3: Riwayat Semua Transaksi
             history_widget = TransactionHistoryWidget(current_user_id=user_id, is_admin_view=True)
             tab_widget.addTab(history_widget, "Riwayat Semua Transaksi")
 
-            # Tab 3: Backup & Restore
+            # Tab 4: Backup & Restore
             backup_widget = BackupRestoreWidget(can_restore=True)
             tab_widget.addTab(backup_widget, "Backup & Restore")
 
@@ -155,11 +163,15 @@ class MainWindow(QMainWindow):
             transaction_widget = TransactionWidget(current_user_id=user_id)
             tab_widget.addTab(transaction_widget, "Transaksi")
 
-            # Tab 2: Riwayat Saya
+            # Tab 2: Buka Rekening Baru (BARU)
+            account_create_widget = AccountCreateWidget(current_user_id=user_id)
+            tab_widget.addTab(account_create_widget, "Buka Rekening Baru")
+
+            # Tab 3: Riwayat Saya
             history_widget = TransactionHistoryWidget(current_user_id=user_id, is_admin_view=False)
             tab_widget.addTab(history_widget, "Riwayat Saya")
 
-            # Tab 3: Backup & Restore (tanpa opsi restore)
+            # Tab 4: Backup & Restore (tanpa opsi restore)
             backup_widget = BackupRestoreWidget(can_restore=False)
             tab_widget.addTab(backup_widget, "Backup & Restore")
 

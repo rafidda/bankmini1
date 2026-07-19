@@ -1,12 +1,13 @@
 import locale
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QDoubleValidator
 from PySide2.QtWidgets import (
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
+    QFrame,
     QHeaderView,
     QCheckBox,
     QLabel,
@@ -19,10 +20,13 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
 # Import komponen database dan model
 from app.database.db import SessionLocal
 from app.models.models import Account
+# Import generator nomor rekening otomatis
+from app.controllers.account_utils import generate_nomor_rekening
 
 # Atur locale ke Indonesia untuk format mata uang Rupiah
 try:
@@ -60,9 +64,9 @@ class AccountManagementWidget(QWidget):
         table_layout.addLayout(filter_layout)
 
         self.account_table = QTableWidget()
-        self.account_table.setColumnCount(8)
+        self.account_table.setColumnCount(11)
         self.account_table.setHorizontalHeaderLabels(
-            ["ID", "No. Rekening", "Nama Nasabah", "NIS Nasabah", "Kelas", "Saldo", "Status", "Tgl Dibuat"]
+            ["ID", "No. Rekening", "Nama Nasabah", "NIS Nasabah", "Kelas", "Saldo", "Status", "Tanggal Ditutup", "Ditutup Oleh", "Tgl Dibuat", "Dibuat Oleh"]
         )
         self.account_table.setEditTriggers(QTableWidget.NoEditTriggers)
         self.account_table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -75,7 +79,18 @@ class AccountManagementWidget(QWidget):
         form_layout = QFormLayout(self.form_group)
         form_layout.setLabelAlignment(Qt.AlignRight)
 
+        # Tombol untuk kembali ke mode "Tambah Baru" secara eksplisit
+        self.add_new_button = QPushButton("+ Buka Rekening Baru")
+        form_layout.addRow(self.add_new_button)
+
+        # Garis pemisah visual
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        form_layout.addRow(line)
+
         self.nomor_rekening_input = QLineEdit()
+        self.nomor_rekening_input.setReadOnly(True) # Dibuat read-only
         self.nama_nasabah_input = QLineEdit()
         self.nis_nasabah_input = QLineEdit()
         self.kelas_nasabah_input = QLineEdit()
@@ -83,16 +98,18 @@ class AccountManagementWidget(QWidget):
         # Field Saldo Awal dengan validator angka
         self.saldo_awal_label = QLabel("Saldo Awal:")
         self.saldo_awal_input = QLineEdit()
-        self.saldo_awal_input.setValidator(QDoubleValidator(0, 1000000000, 2))
+        self.saldo_awal_input.setValidator(QDoubleValidator(0, 10**9, 2))
         self.saldo_awal_input.setText("0")
 
         # Tombol-tombol aksi
         self.save_button = QPushButton("Tambah Rekening")
         self.delete_button = QPushButton("Tutup Rekening")
+        self.restore_button = QPushButton("Aktifkan Kembali Rekening")
         self.cancel_button = QPushButton("Batal Edit")
         action_button_layout = QHBoxLayout()
         action_button_layout.addWidget(self.save_button)
         action_button_layout.addWidget(self.delete_button)
+        action_button_layout.addWidget(self.restore_button)
 
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -110,10 +127,12 @@ class AccountManagementWidget(QWidget):
         main_layout.addWidget(self.form_group, 2)
 
         # --- Hubungkan Signal ke Slot ---
+        self.add_new_button.clicked.connect(self.reset_form_state)
         self.show_deleted_checkbox.stateChanged.connect(self.load_accounts)
         self.account_table.cellClicked.connect(self.handle_table_click)
         self.save_button.clicked.connect(self.handle_save_account)
         self.delete_button.clicked.connect(self.handle_delete_account)
+        self.restore_button.clicked.connect(self.handle_restore_account)
         self.cancel_button.clicked.connect(self.reset_form_state)
 
         self.reset_form_state()
@@ -122,7 +141,7 @@ class AccountManagementWidget(QWidget):
         """Mengambil data rekening dari database dan menampilkannya di tabel."""
         self.account_table.setRowCount(0)
         with SessionLocal() as db:
-            stmt = select(Account)
+            stmt = select(Account).options(joinedload(Account.creator), joinedload(Account.deleter))
 
             # Filter berdasarkan status soft-delete jika checkbox tidak dicentang
             if not self.show_deleted_checkbox.isChecked():
@@ -149,9 +168,21 @@ class AccountManagementWidget(QWidget):
                     status_item.setText("Aktif")
                 self.account_table.setItem(row, 6, status_item)
 
+                # Kolom 7: Tanggal Ditutup
+                deleted_at_str = acc.deleted_at.strftime('%d/%m/%Y %H:%M') if acc.deleted_at else "-"
+                self.account_table.setItem(row, 7, QTableWidgetItem(deleted_at_str))
+
+                # Kolom 8: Ditutup Oleh
+                deleter_name = acc.deleter.nama_lengkap if acc.deleter else "-"
+                self.account_table.setItem(row, 8, QTableWidgetItem(deleter_name))
+
                 # Format tanggal
                 tgl_dibuat_str = acc.created_at.strftime('%d-%m-%Y %H:%M')
-                self.account_table.setItem(row, 7, QTableWidgetItem(tgl_dibuat_str))
+                self.account_table.setItem(row, 9, QTableWidgetItem(tgl_dibuat_str))
+
+                # Kolom 10: Dibuat Oleh
+                creator_name = acc.creator.nama_lengkap if acc.creator else "Sistem"
+                self.account_table.setItem(row, 10, QTableWidgetItem(creator_name))
 
         self.account_table.resizeColumnsToContents()
         self.account_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
@@ -170,6 +201,12 @@ class AccountManagementWidget(QWidget):
             self.nis_nasabah_input.setText(acc.nis_nasabah or "")
             self.kelas_nasabah_input.setText(acc.kelas_nasabah)
 
+            # Tampilkan field nomor rekening (karena ini mode edit)
+            self.nomor_rekening_input.setVisible(True)
+            label = self.form_group.layout().labelForField(self.nomor_rekening_input)
+            if label:
+                label.setVisible(True)
+
             # Jika rekening sudah di-soft-delete, buat form read-only
             if acc.is_deleted:
                 self.form_group.setTitle("Detail Rekening (Dihapus)")
@@ -179,6 +216,7 @@ class AccountManagementWidget(QWidget):
                 self.kelas_nasabah_input.setEnabled(False)
                 self.save_button.setEnabled(False)
                 self.delete_button.setEnabled(False) # Tidak bisa dihapus lagi
+                self.restore_button.setVisible(True)
                 self.cancel_button.setVisible(True)
                 self.status_label.setText("Rekening ini telah dihapus (read-only).")
             else:
@@ -191,6 +229,7 @@ class AccountManagementWidget(QWidget):
                 self.save_button.setEnabled(True)
                 self.save_button.setText("Update Rekening")
                 self.delete_button.setEnabled(True)
+                self.restore_button.setVisible(False)
                 self.cancel_button.setVisible(True)
                 self.status_label.setText("")
 
@@ -200,54 +239,61 @@ class AccountManagementWidget(QWidget):
     def handle_save_account(self):
         """Logika untuk menambah atau mengupdate rekening, tergantung state."""
         self.status_label.setText("")
-        nomor_rekening = self.nomor_rekening_input.text().strip()
         nama_nasabah = self.nama_nasabah_input.text().strip()
         nis_nasabah = self.nis_nasabah_input.text().strip() or None
         kelas_nasabah = self.kelas_nasabah_input.text().strip()
 
-        if not all([nomor_rekening, nama_nasabah, kelas_nasabah]):
-            self.status_label.setText("Semua field harus diisi.")
+        # Validasi field wajib (nomor rekening tidak lagi divalidasi di sini)
+        if not all([nama_nasabah, kelas_nasabah]):
+            self.status_label.setText("Nama dan Kelas Nasabah wajib diisi.")
             self.status_label.setStyleSheet("color: red;")
             return
 
         with SessionLocal() as db:
-            # Cek duplikasi nomor rekening
-            stmt = select(Account).where(Account.nomor_rekening == nomor_rekening)
-            if self.selected_account_id:  # Jika mode edit, kecualikan diri sendiri
-                stmt = stmt.where(Account.id != self.selected_account_id)
-            if db.execute(stmt).first():
-                self.status_label.setText("Nomor rekening sudah digunakan.")
-                self.status_label.setStyleSheet("color: red;")
-                return
-
             # --- MODE UPDATE ---
             if self.selected_account_id:
+                # Nomor rekening tidak bisa diubah, jadi tidak perlu divalidasi atau di-set ulang.
                 acc_to_update = db.get(Account, self.selected_account_id)
-                acc_to_update.nomor_rekening = nomor_rekening
                 acc_to_update.nama_nasabah = nama_nasabah
                 acc_to_update.nis_nasabah = nis_nasabah
                 acc_to_update.kelas_nasabah = kelas_nasabah
                 db.commit()
                 self.status_label.setText("Data rekening berhasil diupdate.")
+                self.status_label.setStyleSheet("color: green;")
+
             # --- MODE TAMBAH BARU ---
             else:
-                saldo_awal_str = self.saldo_awal_input.text().replace(',', '.')
-                saldo_awal = float(saldo_awal_str) if saldo_awal_str else 0.0
-                if saldo_awal < 0:
-                    self.status_label.setText("Saldo awal tidak boleh negatif.")
+                # Validasi saldo awal
+                try:
+                    saldo_awal_str = self.saldo_awal_input.text().replace(',', '.')
+                    saldo_awal = Decimal(saldo_awal_str) if saldo_awal_str else Decimal('0')
+                    if saldo_awal < Decimal('0'):
+                        raise InvalidOperation
+                except InvalidOperation:
+                    self.status_label.setText("Saldo awal harus angka valid dan tidak negatif.")
                     self.status_label.setStyleSheet("color: red;")
                     return
 
+                # Generate nomor rekening baru secara otomatis
+                nomor_rekening_baru = generate_nomor_rekening(db)
+
                 new_account = Account(
-                    nomor_rekening=nomor_rekening, nama_nasabah=nama_nasabah,
+                    nomor_rekening=nomor_rekening_baru, nama_nasabah=nama_nasabah,
                     nis_nasabah=nis_nasabah, kelas_nasabah=kelas_nasabah, saldo=saldo_awal,
                     created_by=self.current_user_id
                 )
                 db.add(new_account)
                 db.commit()
-                self.status_label.setText("Rekening baru berhasil ditambahkan.")
 
-            self.status_label.setStyleSheet("color: green;")
+                # Tampilkan pesan sukses dengan nomor rekening yang baru dibuat
+                QMessageBox.information(
+                    self,
+                    "Buka Rekening Berhasil",
+                    f"Rekening baru berhasil dibuka.\n\n"
+                    f"Nomor Rekening: {nomor_rekening_baru}\n"
+                    f"Nama Nasabah: {nama_nasabah}"
+                )
+
             self.load_accounts()
             self.reset_form_state()
 
@@ -293,6 +339,37 @@ class AccountManagementWidget(QWidget):
                     db.rollback()
                     QMessageBox.critical(self, "Error Database", f"Gagal menutup rekening.\n\nError: {e}")
 
+    def handle_restore_account(self):
+        """Logika untuk mengaktifkan kembali rekening yang sudah di-soft-delete."""
+        if self.selected_account_id is None:
+            return
+
+        with SessionLocal() as db:
+            acc_to_restore = db.get(Account, self.selected_account_id)
+            if not acc_to_restore:
+                self.reset_form_state()
+                return
+
+            reply = QMessageBox.question(
+                self, "Konfirmasi Aktifkan Kembali",
+                f"Aktifkan kembali rekening '{acc_to_restore.nomor_rekening} - {acc_to_restore.nama_nasabah}'?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                try:
+                    acc_to_restore.is_deleted = False
+                    acc_to_restore.deleted_at = None
+                    acc_to_restore.deleted_by = None
+                    db.commit()
+                    self.status_label.setText(f"Rekening '{acc_to_restore.nomor_rekening}' berhasil diaktifkan kembali.")
+                    self.status_label.setStyleSheet("color: green;")
+                    self.load_accounts()
+                    self.reset_form_state()
+                except Exception as e:
+                    db.rollback()
+                    QMessageBox.critical(self, "Error Database", f"Terjadi kesalahan saat mengaktifkan rekening.\n\nError: {e}")
+
     def reset_form_state(self):
         """Mengembalikan form ke state awal (mode tambah baru)."""
         self.account_table.clearSelection()
@@ -309,11 +386,18 @@ class AccountManagementWidget(QWidget):
         self.saldo_awal_label.setVisible(True)
         self.saldo_awal_input.setVisible(True)
 
+        # Sembunyikan field nomor rekening (karena ini mode tambah baru)
+        self.nomor_rekening_input.setVisible(False)
+        label = self.form_group.layout().labelForField(self.nomor_rekening_input)
+        if label:
+            label.setVisible(False)
+
         # Atur ulang UI ke mode tambah
         self.form_group.setTitle("Tambah Rekening Baru")
         self.save_button.setText("Tambah Rekening")
         self.save_button.setEnabled(True)
         self.delete_button.setEnabled(False)
+        self.restore_button.setVisible(False)
         self.cancel_button.setVisible(False)
 
         # Pastikan semua field input aktif kembali

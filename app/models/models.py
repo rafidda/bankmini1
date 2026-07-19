@@ -34,7 +34,8 @@ class User(Base):
     nama_lengkap: Mapped[str] = mapped_column(String(100), nullable=False)
     # NIP untuk admin/guru, NIS untuk siswa, kosong untuk superadmin
     nomor_induk: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, unique=True)
-    kelas: Mapped[Optional[str]] = mapped_column(String(50))  # Boleh NULL, khusus untuk siswa
+    # Tingkat kelas siswa, angka 1-12, opsional (misal untuk pegawai sekolah yang bukan siswa)
+    kelas: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
     # Kolom untuk mencatat siapa yang membuat user ini (self-referencing foreign key).
@@ -99,7 +100,8 @@ class Account(Base):
     # NIS siswa pemilik rekening. Terpisah dari nomor_rekening.
     # Tidak unik untuk antisipasi 1 siswa punya >1 rekening.
     nis_nasabah: Mapped[Optional[str]] = mapped_column(String(30), nullable=True, index=True)
-    kelas_nasabah: Mapped[str] = mapped_column(String(50), nullable=False)
+    # Tingkat kelas nasabah, angka 1-12, OPSIONAL karena nasabah bisa juga pegawai sekolah bukan siswa
+    kelas_nasabah: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     saldo: Mapped[float] = mapped_column(Numeric(15, 2), default=0.0, nullable=False)
     created_by: Mapped[int] = mapped_column(ForeignKey("user.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())

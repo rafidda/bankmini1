@@ -4,6 +4,7 @@ from PySide2.QtCore import Qt
 from PySide2.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QFormLayout,
     QGroupBox,
     QHBoxLayout,
@@ -57,9 +58,9 @@ class UserManagementWidget(QWidget):
         table_layout.addLayout(filter_layout)
 
         self.user_table = QTableWidget()
-        self.user_table.setColumnCount(8)
+        self.user_table.setColumnCount(10)
         self.user_table.setHorizontalHeaderLabels(
-            ["ID", "Username", "Nama Lengkap", "Role", "Nomor Induk", "Kelas", "Status", "Dibuat Oleh"]
+            ["ID", "Username", "Nama Lengkap", "Role", "Nomor Induk", "Kelas", "Status", "Tanggal Dihapus", "Dihapus Oleh", "Dibuat Oleh"]
         )
         # Membuat tabel tidak bisa diedit langsung
         self.user_table.setEditTriggers(QTableWidget.NoEditTriggers)
@@ -74,6 +75,16 @@ class UserManagementWidget(QWidget):
         # QFormLayout ideal untuk membuat form input
         form_layout = QFormLayout(self.form_group)
         form_layout.setLabelAlignment(Qt.AlignRight)
+
+        # Tombol untuk kembali ke mode "Tambah Baru" secara eksplisit
+        self.add_new_button = QPushButton("+ Tambah User Baru")
+        form_layout.addRow(self.add_new_button)
+
+        # Garis pemisah visual
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        form_layout.addRow(line)
 
         self.username_input = QLineEdit()
         self.password_input = QLineEdit()
@@ -90,12 +101,14 @@ class UserManagementWidget(QWidget):
         # Tombol-tombol aksi
         self.save_button = QPushButton("Tambah User")
         self.delete_button = QPushButton("Hapus User")
+        self.restore_button = QPushButton("Aktifkan Kembali")
         self.cancel_button = QPushButton("Batal Edit")
 
         # Layout untuk tombol simpan dan hapus
         action_button_layout = QHBoxLayout()
         action_button_layout.addWidget(self.save_button)
         action_button_layout.addWidget(self.delete_button)
+        action_button_layout.addWidget(self.restore_button)
 
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignCenter)
@@ -116,10 +129,12 @@ class UserManagementWidget(QWidget):
         main_layout.addWidget(self.form_group, 2)   # Stretch factor 2 (sekitar 40%)
 
         # --- Hubungkan Signal ke Slot ---
+        self.add_new_button.clicked.connect(self.reset_form_state)
         self.show_deleted_checkbox.stateChanged.connect(self.load_users)
         self.user_table.cellClicked.connect(self.handle_table_click)
         self.save_button.clicked.connect(self.handle_save_user)
         self.delete_button.clicked.connect(self.handle_delete_user)
+        self.restore_button.clicked.connect(self.handle_restore_user)
         self.cancel_button.clicked.connect(self.reset_form_state)
 
         # Atur state awal form ke mode "Tambah Baru"
@@ -131,8 +146,8 @@ class UserManagementWidget(QWidget):
 
         with SessionLocal() as db:
             # Query semua user, diurutkan berdasarkan ID.
-            # Tambahkan joinedload untuk relasi 'creator' agar efisien.
-            stmt = select(User).options(joinedload(User.creator))
+            # Tambahkan joinedload untuk relasi 'creator' dan 'deleter' agar efisien.
+            stmt = select(User).options(joinedload(User.creator), joinedload(User.deleter))
 
             # Filter berdasarkan status soft-delete jika checkbox tidak dicentang
             if not self.show_deleted_checkbox.isChecked():
@@ -160,14 +175,22 @@ class UserManagementWidget(QWidget):
                 status_item.setTextAlignment(Qt.AlignCenter)
                 self.user_table.setItem(row, 6, status_item)
 
-                # Kolom baru: Dibuat Oleh
+                # Kolom 7: Tanggal Dihapus
+                deleted_at_str = user.deleted_at.strftime('%d/%m/%Y %H:%M') if user.deleted_at else "-"
+                self.user_table.setItem(row, 7, QTableWidgetItem(deleted_at_str))
+
+                # Kolom 8: Dihapus Oleh
+                deleter_name = user.deleter.nama_lengkap if user.deleter else "-"
+                self.user_table.setItem(row, 8, QTableWidgetItem(deleter_name))
+
+                # Kolom 9: Dibuat Oleh
                 creator_name = user.creator.nama_lengkap if user.creator else "Sistem (Seed Awal)"
-                self.user_table.setItem(row, 7, QTableWidgetItem(creator_name))
+                self.user_table.setItem(row, 9, QTableWidgetItem(creator_name))
 
         # Atur lebar kolom agar sesuai konten, kecuali kolom nama yang mengisi sisa ruang
         self.user_table.resizeColumnsToContents()
         self.user_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.Stretch)
-        self.user_table.horizontalHeader().setSectionResizeMode(7, QHeaderView.Stretch)
+        self.user_table.horizontalHeader().setSectionResizeMode(9, QHeaderView.Stretch)
 
     def handle_table_click(self, row, column):
         """Mengisi form saat baris tabel diklik (masuk ke mode edit)."""
@@ -206,6 +229,7 @@ class UserManagementWidget(QWidget):
                 self.is_active_checkbox.setEnabled(False)
                 self.save_button.setEnabled(False)
                 self.delete_button.setEnabled(False) # Tidak bisa dihapus lagi
+                self.restore_button.setVisible(True)
                 self.cancel_button.setVisible(True)
                 self.status_label.setText("User ini telah dihapus (read-only).")
             else:
@@ -219,6 +243,7 @@ class UserManagementWidget(QWidget):
                 self.save_button.setEnabled(True)
                 self.save_button.setText("Update User")
                 self.delete_button.setEnabled(True)
+                self.restore_button.setVisible(False)
                 self.cancel_button.setVisible(True)
                 self.status_label.setText("")
 
@@ -321,15 +346,29 @@ class UserManagementWidget(QWidget):
             return
 
         with SessionLocal() as db:
-            if db.execute(select(User).where(User.username == username)).first():
-                self.status_label.setText("Username sudah digunakan.")
+            existing_user_by_username = db.execute(select(User).where(User.username == username)).scalars().first()
+            if existing_user_by_username:
+                if existing_user_by_username.is_deleted:
+                    self.status_label.setText(
+                        "Username ini pernah dipakai oleh user yang sudah dihapus.\n"
+                        "Centang 'Tampilkan yang Dihapus' dan aktifkan kembali akun tersebut."
+                    )
+                else:
+                    self.status_label.setText("Username sudah digunakan.")
                 self.status_label.setStyleSheet("color: red;")
                 return
 
             # Validasi keunikan nomor induk
             if nomor_induk:
-                if db.execute(select(User).where(User.nomor_induk == nomor_induk)).first():
-                    self.status_label.setText("Nomor Induk sudah digunakan oleh user lain.")
+                existing_user_by_nomor_induk = db.execute(select(User).where(User.nomor_induk == nomor_induk)).scalars().first()
+                if existing_user_by_nomor_induk:
+                    if existing_user_by_nomor_induk.is_deleted:
+                        self.status_label.setText(
+                            "Nomor Induk ini pernah dipakai oleh user yang sudah dihapus.\n"
+                            "Centang 'Tampilkan yang Dihapus' dan aktifkan kembali akun tersebut."
+                        )
+                    else:
+                        self.status_label.setText("Nomor Induk sudah digunakan oleh user lain.")
                     self.status_label.setStyleSheet("color: red;")
                     return
 
@@ -404,6 +443,38 @@ class UserManagementWidget(QWidget):
                     db.rollback()
                     QMessageBox.critical(self, "Error Database", f"Terjadi kesalahan saat menghapus user (soft-delete).\n\nError: {e}")
 
+    def handle_restore_user(self):
+        """Logika untuk mengaktifkan kembali user yang sudah di-soft-delete."""
+        if self.selected_user_id is None:
+            return
+
+        with SessionLocal() as db:
+            user_to_restore = db.get(User, self.selected_user_id)
+            if not user_to_restore:
+                self.reset_form_state()
+                return
+
+            reply = QMessageBox.question(
+                self, "Konfirmasi Aktifkan Kembali",
+                f"Aktifkan kembali user '{user_to_restore.nama_lengkap}'? Username dan Nomor Induk akan bisa digunakan lagi.",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+            )
+
+            if reply == QMessageBox.Yes:
+                try:
+                    user_to_restore.is_deleted = False
+                    user_to_restore.deleted_at = None
+                    user_to_restore.deleted_by = None
+                    user_to_restore.is_active = True
+                    db.commit()
+                    self.status_label.setText(f"User '{user_to_restore.username}' berhasil diaktifkan kembali.")
+                    self.status_label.setStyleSheet("color: green;")
+                    self.load_users()
+                    self.reset_form_state()
+                except Exception as e:
+                    db.rollback()
+                    QMessageBox.critical(self, "Error Database", f"Terjadi kesalahan saat mengaktifkan user.\n\nError: {e}")
+
     def reset_form_state(self):
         """Mengembalikan form ke state awal (mode tambah baru)."""
         self.user_table.clearSelection()
@@ -436,4 +507,5 @@ class UserManagementWidget(QWidget):
         self.save_button.setText("Tambah User")
         self.save_button.setEnabled(True)
         self.delete_button.setEnabled(False)
+        self.restore_button.setVisible(False)
         self.cancel_button.setVisible(False)
