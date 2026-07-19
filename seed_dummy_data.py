@@ -22,7 +22,7 @@ init_db()
 
 NAMA_DEPAN = ["Budi", "Siti", "Ahmad", "Dewi", "Rudi", "Ani", "Joko", "Rina", "Agus", "Lina"]
 NAMA_BELAKANG = ["Santoso", "Wijaya", "Pratama", "Kusuma", "Saputra", "Lestari", "Hidayat", "Utami"]
-KELAS_LIST = ["XII AKL 1", "XII AKL 2", "XI AKL 1", "XI AKL 2"]
+KELAS_LIST = [10, 11, 12]  # Tingkat kelas SMK: 10, 11, 12
 
 
 def random_nama():
@@ -118,11 +118,11 @@ with SessionLocal() as db:
     creator_id = created_admins[0].id if created_admins else None
 
     nasabah_contoh = [
-        ("001", "Budi Santoso", "0041111001", "XII AKL 1", Decimal("300000")),
-        ("002", "Ani Wijaya", "0041111002", "XII AKL 2", Decimal("300000")),
-        ("003", "Joko Pratama", "0041111003", "XI AKL 1", Decimal("300000")),
-        ("004", "Dewi Kusuma", "0041111004", "XI AKL 2", Decimal("300000")),
-        ("005", "Rudi Hidayat", "0041111005", "XII AKL 1", Decimal("300000")),
+        ("001", "Budi Santoso", "0041111001", 12, Decimal("300000")),
+        ("002", "Ani Wijaya", "0041111002", 12, Decimal("300000")),
+        ("003", "Joko Pratama", "0041111003", 11, Decimal("300000")),
+        ("004", "Dewi Kusuma", "0041111004", 11, Decimal("300000")),
+        ("005", "Rudi Hidayat", "0041111005", 10, Decimal("300000")),
     ]
     created_accounts = {}
 

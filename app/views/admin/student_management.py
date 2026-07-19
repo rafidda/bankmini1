@@ -12,6 +12,7 @@
 import bcrypt
 from datetime import datetime
 from PySide2.QtCore import Qt
+from PySide2.QtGui import QIntValidator
 from PySide2.QtWidgets import (
     QCheckBox,
     QFrame,
@@ -97,6 +98,7 @@ class StudentManagementWidget(QWidget):
         self.nomor_induk_input = QLineEdit()
         self.nomor_induk_input.setPlaceholderText("NIS siswa wajib diisi")
         self.kelas_input = QLineEdit()
+        self.kelas_input.setValidator(QIntValidator(1, 12))
         self.is_active_checkbox = QCheckBox("Aktif")
 
         self.save_button = QPushButton("Tambah Siswa")
@@ -155,7 +157,7 @@ class StudentManagementWidget(QWidget):
                 self.student_table.setItem(row, 1, QTableWidgetItem(student.username))
                 self.student_table.setItem(row, 2, QTableWidgetItem(student.nama_lengkap))
                 self.student_table.setItem(row, 3, QTableWidgetItem(student.nomor_induk or "-"))
-                self.student_table.setItem(row, 4, QTableWidgetItem(student.kelas or "-"))
+                self.student_table.setItem(row, 4, QTableWidgetItem(str(student.kelas) if student.kelas is not None else "-"))
 
                 status_item = QTableWidgetItem()
                 if student.is_deleted:
@@ -201,7 +203,7 @@ class StudentManagementWidget(QWidget):
             self.password_input.setPlaceholderText("Kosongkan jika tidak ingin diubah")
             self.nama_lengkap_input.setText(student.nama_lengkap)
             self.nomor_induk_input.setText(student.nomor_induk or "")
-            self.kelas_input.setText(student.kelas or "")
+            self.kelas_input.setText(str(student.kelas) if student.kelas is not None else "")
             self.is_active_checkbox.setChecked(student.is_active)
 
             if student.is_deleted:
@@ -238,7 +240,8 @@ class StudentManagementWidget(QWidget):
         nama_lengkap = self.nama_lengkap_input.text().strip()
         password = self.password_input.text()
         nomor_induk = self.nomor_induk_input.text().strip() or None
-        kelas = self.kelas_input.text().strip() or None
+        kelas_text = self.kelas_input.text().strip()
+        kelas = int(kelas_text) if kelas_text else None
         is_active = self.is_active_checkbox.isChecked()
 
         if not all([nama_lengkap, nomor_induk]):

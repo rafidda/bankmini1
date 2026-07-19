@@ -2,7 +2,7 @@ import locale
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from PySide2.QtCore import Qt
-from PySide2.QtGui import QDoubleValidator
+from PySide2.QtGui import QDoubleValidator, QIntValidator
 from PySide2.QtWidgets import (
     QFormLayout,
     QGroupBox,
@@ -94,12 +94,7 @@ class AccountManagementWidget(QWidget):
         self.nama_nasabah_input = QLineEdit()
         self.nis_nasabah_input = QLineEdit()
         self.kelas_nasabah_input = QLineEdit()
-
-        # Field Saldo Awal dengan validator angka
-        self.saldo_awal_label = QLabel("Saldo Awal:")
-        self.saldo_awal_input = QLineEdit()
-        self.saldo_awal_input.setValidator(QDoubleValidator(0, 10**9, 2))
-        self.saldo_awal_input.setText("0")
+        self.kelas_nasabah_input.setValidator(QIntValidator(1, 12))
 
         # Tombol-tombol aksi
         self.save_button = QPushButton("Tambah Rekening")
@@ -118,7 +113,6 @@ class AccountManagementWidget(QWidget):
         form_layout.addRow("Nama Nasabah:", self.nama_nasabah_input)
         form_layout.addRow("NIS Nasabah:", self.nis_nasabah_input)
         form_layout.addRow("Kelas Nasabah:", self.kelas_nasabah_input)
-        form_layout.addRow(self.saldo_awal_label, self.saldo_awal_input)
         form_layout.addRow(action_button_layout)
         form_layout.addRow(self.cancel_button)
         form_layout.addRow(self.status_label)
@@ -154,7 +148,7 @@ class AccountManagementWidget(QWidget):
                 self.account_table.setItem(row, 1, QTableWidgetItem(acc.nomor_rekening))
                 self.account_table.setItem(row, 2, QTableWidgetItem(acc.nama_nasabah))
                 self.account_table.setItem(row, 3, QTableWidgetItem(acc.nis_nasabah or "-"))
-                self.account_table.setItem(row, 4, QTableWidgetItem(acc.kelas_nasabah))
+                self.account_table.setItem(row, 4, QTableWidgetItem(str(acc.kelas_nasabah) if acc.kelas_nasabah is not None else "-"))
                 # Format saldo sebagai mata uang
                 saldo_str = locale.currency(acc.saldo, grouping=True, symbol='Rp ')
                 self.account_table.setItem(row, 5, QTableWidgetItem(saldo_str))
@@ -199,7 +193,7 @@ class AccountManagementWidget(QWidget):
             self.nomor_rekening_input.setText(acc.nomor_rekening)
             self.nama_nasabah_input.setText(acc.nama_nasabah)
             self.nis_nasabah_input.setText(acc.nis_nasabah or "")
-            self.kelas_nasabah_input.setText(acc.kelas_nasabah)
+            self.kelas_nasabah_input.setText(str(acc.kelas_nasabah) if acc.kelas_nasabah is not None else "")
 
             # Tampilkan field nomor rekening (karena ini mode edit)
             self.nomor_rekening_input.setVisible(True)
@@ -233,19 +227,17 @@ class AccountManagementWidget(QWidget):
                 self.cancel_button.setVisible(True)
                 self.status_label.setText("")
 
-            self.saldo_awal_label.setVisible(False) # Saldo awal selalu disembunyikan saat edit
-            self.saldo_awal_input.setVisible(False)
-
     def handle_save_account(self):
         """Logika untuk menambah atau mengupdate rekening, tergantung state."""
         self.status_label.setText("")
         nama_nasabah = self.nama_nasabah_input.text().strip()
         nis_nasabah = self.nis_nasabah_input.text().strip() or None
-        kelas_nasabah = self.kelas_nasabah_input.text().strip()
+        kelas_nasabah_text = self.kelas_nasabah_input.text().strip()
+        kelas_nasabah = int(kelas_nasabah_text) if kelas_nasabah_text else None
 
         # Validasi field wajib (nomor rekening tidak lagi divalidasi di sini)
-        if not all([nama_nasabah, kelas_nasabah]):
-            self.status_label.setText("Nama dan Kelas Nasabah wajib diisi.")
+        if not nama_nasabah:
+            self.status_label.setText("Nama Nasabah wajib diisi.")
             self.status_label.setStyleSheet("color: red;")
             return
 
@@ -263,23 +255,12 @@ class AccountManagementWidget(QWidget):
 
             # --- MODE TAMBAH BARU ---
             else:
-                # Validasi saldo awal
-                try:
-                    saldo_awal_str = self.saldo_awal_input.text().replace(',', '.')
-                    saldo_awal = Decimal(saldo_awal_str) if saldo_awal_str else Decimal('0')
-                    if saldo_awal < Decimal('0'):
-                        raise InvalidOperation
-                except InvalidOperation:
-                    self.status_label.setText("Saldo awal harus angka valid dan tidak negatif.")
-                    self.status_label.setStyleSheet("color: red;")
-                    return
-
                 # Generate nomor rekening baru secara otomatis
                 nomor_rekening_baru = generate_nomor_rekening(db)
 
                 new_account = Account(
                     nomor_rekening=nomor_rekening_baru, nama_nasabah=nama_nasabah,
-                    nis_nasabah=nis_nasabah, kelas_nasabah=kelas_nasabah, saldo=saldo_awal,
+                    nis_nasabah=nis_nasabah, kelas_nasabah=kelas_nasabah, saldo=Decimal('0'),
                     created_by=self.current_user_id
                 )
                 db.add(new_account)
@@ -287,11 +268,11 @@ class AccountManagementWidget(QWidget):
 
                 # Tampilkan pesan sukses dengan nomor rekening yang baru dibuat
                 QMessageBox.information(
-                    self,
-                    "Buka Rekening Berhasil",
-                    f"Rekening baru berhasil dibuka.\n\n"
-                    f"Nomor Rekening: {nomor_rekening_baru}\n"
-                    f"Nama Nasabah: {nama_nasabah}"
+                    self, "Buka Rekening Berhasil",
+                    f"Rekening baru berhasil dibuka:\n\n"
+                    f"<b>Nomor Rekening: {nomor_rekening_baru}</b>\n\n"
+                    f"Nama Nasabah: {nama_nasabah}\n"
+                    f"Saldo saat ini: Rp 0. Silakan proses Setor Tunai di tab Transaksi untuk mengisi saldo rekening ini."
                 )
 
             self.load_accounts()
@@ -379,12 +360,7 @@ class AccountManagementWidget(QWidget):
         self.nama_nasabah_input.clear()
         self.nis_nasabah_input.clear()
         self.kelas_nasabah_input.clear()
-        self.saldo_awal_input.setText("0")
         self.status_label.setText("")
-
-        # Tampilkan kembali field saldo awal
-        self.saldo_awal_label.setVisible(True)
-        self.saldo_awal_input.setVisible(True)
 
         # Sembunyikan field nomor rekening (karena ini mode tambah baru)
         self.nomor_rekening_input.setVisible(False)

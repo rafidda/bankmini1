@@ -18,6 +18,8 @@ from app.database.db import SessionLocal
 from app.models.models import LoginLog
 # Import widget manajemen user untuk role superadmin
 from app.views.superadmin.user_management import UserManagementWidget
+# Import widget pengaturan aplikasi untuk role superadmin
+from app.views.superadmin.app_settings import AppSettingsWidget
 # Import widget manajemen rekening untuk role admin
 from app.views.admin.account_management import AccountManagementWidget
 # Import widget manajemen siswa untuk role admin
@@ -117,15 +119,11 @@ class MainWindow(QMainWindow):
             user_management_widget = UserManagementWidget(current_user_id=self.user_data['id'])
             tab_widget.addTab(user_management_widget, "Kelola User")
 
-            # Tab 2: Kelola Rekening Nasabah
-            account_management_widget = AccountManagementWidget(current_user_id=user_id)
-            tab_widget.addTab(account_management_widget, "Kelola Rekening Nasabah")
-
-            # Tab 3: Riwayat Semua Transaksi
+            # Tab 2: Riwayat Semua Transaksi
             history_widget = TransactionHistoryWidget(current_user_id=user_id, is_admin_view=True)
             tab_widget.addTab(history_widget, "Riwayat Semua Transaksi")
 
-            # Tab 4: Backup & Restore
+            # Tab 3: Backup & Restore
             backup_widget = BackupRestoreWidget(can_restore=True)
             tab_widget.addTab(backup_widget, "Backup & Restore")
 
@@ -136,7 +134,7 @@ class MainWindow(QMainWindow):
             # Admin mendapatkan akses dalam bentuk tab
             tab_widget = QTabWidget()
 
-            # Tab 1: Kelola Siswa (BARU)
+            # Tab 1: Kelola Siswa
             student_management_widget = StudentManagementWidget(current_user_id=user_id)
             tab_widget.addTab(student_management_widget, "Kelola Siswa")
 
@@ -151,6 +149,10 @@ class MainWindow(QMainWindow):
             # Tab 4: Backup & Restore
             backup_widget = BackupRestoreWidget(can_restore=True)
             tab_widget.addTab(backup_widget, "Backup & Restore")
+
+            # Tab 5: Pengaturan (dipindahkan dari superadmin)
+            settings_widget = AppSettingsWidget()
+            tab_widget.addTab(settings_widget, "Pengaturan")
 
             self.content_area.addWidget(tab_widget)
             self.content_area.setCurrentWidget(tab_widget)
@@ -167,9 +169,9 @@ class MainWindow(QMainWindow):
             account_create_widget = AccountCreateWidget(current_user_id=user_id)
             tab_widget.addTab(account_create_widget, "Buka Rekening Baru")
 
-            # Tab 3: Riwayat Saya
+            # Tab 3: Riwayat Transaksi
             history_widget = TransactionHistoryWidget(current_user_id=user_id, is_admin_view=False)
-            tab_widget.addTab(history_widget, "Riwayat Saya")
+            tab_widget.addTab(history_widget, "Riwayat Transaksi")
 
             # Tab 4: Backup & Restore (tanpa opsi restore)
             backup_widget = BackupRestoreWidget(can_restore=False)

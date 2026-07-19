@@ -90,9 +90,11 @@ class TransactionHistoryWidget(QWidget):
         self.reset_date_button = QPushButton("Reset Tanggal")
         filter_layout.addWidget(self.reset_date_button)
 
-        # Filter berdasarkan teller (hanya untuk admin)
+        # Filter dan tombol cetak laporan (berdasarkan role)
         self.teller_filter_combo = QComboBox()
         self.print_teller_report_button = QPushButton("Cetak Laporan Teller")
+        self.print_my_report_button = QPushButton("Cetak Laporan Saya")
+
         if self.is_admin_view:
             filter_layout.addWidget(QLabel("Teller:"))
             filter_layout.addWidget(self.teller_filter_combo)
@@ -100,6 +102,7 @@ class TransactionHistoryWidget(QWidget):
         else:
             self.teller_filter_combo.setVisible(False)
             self.print_teller_report_button.setVisible(False)
+            # Tombol untuk siswa akan ditambahkan setelah tombol lain
 
         filter_layout.addStretch()
 
@@ -110,6 +113,9 @@ class TransactionHistoryWidget(QWidget):
         # Tombol Cetak Buku Tabungan
         self.print_book_button = QPushButton("Cetak Buku Tabungan")
         filter_layout.addWidget(self.print_book_button)
+
+        if not self.is_admin_view:
+            filter_layout.addWidget(self.print_my_report_button)
 
         # --- Tabel Riwayat Transaksi ---
         self.history_table = QTableWidget()
@@ -140,6 +146,7 @@ class TransactionHistoryWidget(QWidget):
         self.teller_filter_combo.currentIndexChanged.connect(self._apply_filters)
         self.print_book_button.clicked.connect(self.handle_cetak_buku_tabungan)
         self.print_teller_report_button.clicked.connect(self.handle_cetak_laporan_teller)
+        self.print_my_report_button.clicked.connect(self.handle_cetak_laporan_sendiri)
 
     def _reset_date_filters(self):
         """Mengembalikan filter tanggal ke nilai default (30 hari terakhir)."""
@@ -158,10 +165,6 @@ class TransactionHistoryWidget(QWidget):
                 joinedload(Transaction.account),
                 joinedload(Transaction.teller)
             )
-
-            # Jika bukan admin, filter hanya transaksi yang dibuat oleh user ini
-            if not self.is_admin_view:
-                stmt = stmt.where(Transaction.teller_id == self.current_user_id)
 
             # Urutkan dari yang paling baru
             stmt = stmt.order_by(Transaction.waktu_transaksi.desc())
@@ -374,45 +377,59 @@ class TransactionHistoryWidget(QWidget):
         except Exception as e:
             # Tangani semua kemungkinan error
             QMessageBox.critical(self, "Error", f"Gagal mencetak buku tabungan:\n{e}")
-
+    
+    def handle_cetak_laporan_sendiri(self):
+        """
+        Memanggil fungsi untuk generate PDF laporan untuk user siswa yang sedang login.
+        Hanya aktif jika is_admin_view False.
+        """
+        self._generate_and_save_teller_report(self.current_user_id)
+    
     def handle_cetak_laporan_teller(self):
         """
-        Memvalidasi teller yang dipilih, mengambil data, dan memanggil
-        fungsi untuk generate PDF laporan per teller.
+        Memvalidasi teller yang dipilih dari dropdown dan memanggil helper
+        untuk generate PDF laporan per teller.
         Hanya aktif jika is_admin_view True.
         """
         # 1. Validasi: Cek apakah teller spesifik sudah dipilih di dropdown
         selected_teller_id = self.teller_filter_combo.currentData()
         if selected_teller_id is None:
             QMessageBox.warning(
-                self,
-                "Aksi Ditolak",
+                self, "Aksi Ditolak",
                 "Silakan pilih satu nama teller terlebih dahulu di dropdown filter sebelum mencetak laporan."
             )
             return
+        
+        # 2. Panggil helper method dengan ID yang dipilih
+        self._generate_and_save_teller_report(selected_teller_id)
 
+    def _generate_and_save_teller_report(self, teller_id: int):
+        """
+        Helper method untuk men-generate dan menyimpan laporan PDF untuk teller_id tertentu.
+        Digunakan oleh handle_cetak_laporan_teller dan handle_cetak_laporan_sendiri.
+        """
         try:
             with SessionLocal() as db:
-                # 2. Ambil data yang diperlukan dari DB
-                # Ambil objek User (teller) yang dipilih
-                teller = db.get(User, selected_teller_id)
+                # Ambil objek User (teller)
+                teller = db.get(User, teller_id)
                 if not teller:
-                    raise Exception("Data teller tidak ditemukan di database.")
-
+                    raise Exception("Data user tidak ditemukan di database.")
+                
                 # Ambil SEMUA transaksi untuk teller ini, urutkan dari LAMA ke BARU
                 # Gunakan joinedload untuk relasi account agar tidak terjadi N+1 query
                 all_teller_transactions = db.execute(
                     select(Transaction)
                     .options(joinedload(Transaction.account))
-                    .where(Transaction.teller_id == selected_teller_id)
+                    .where(Transaction.teller_id == teller_id)
                     .order_by(Transaction.waktu_transaksi.asc())  # LAMA ke BARU
                 ).scalars().all()
 
-                # 3. Tentukan periode dan cek jika ada transaksi
+                # Cek jika ada transaksi
                 if not all_teller_transactions:
-                    QMessageBox.information(self, "Informasi", f"Teller '{teller.nama_lengkap}' belum memiliki riwayat transaksi.")
+                    QMessageBox.information(self, "Informasi", f"User '{teller.nama_lengkap}' belum memiliki riwayat transaksi untuk dilaporkan.")
                     return
 
+                # Tentukan periode laporan dari transaksi pertama hingga sekarang
                 tanggal_mulai = all_teller_transactions[0].waktu_transaksi
                 tanggal_akhir = datetime.now()
 
@@ -420,27 +437,27 @@ class TransactionHistoryWidget(QWidget):
                 current_user = db.get(User, self.current_user_id)
                 dicetak_oleh = current_user.nama_lengkap if current_user else "Sistem"
 
-            # 4. Buka dialog simpan file
-            default_filename = f"LaporanTeller_{teller.username}.pdf"
+            # Buka dialog simpan file
+            default_filename = f"Laporan_{teller.username}_{datetime.now().strftime('%Y%m%d')}.pdf"
             save_path, _ = QFileDialog.getSaveFileName(
-                self, "Simpan Laporan Teller", default_filename, "PDF Files (*.pdf)"
+                self, "Simpan Laporan", default_filename, "PDF Files (*.pdf)"
             )
 
             if save_path:
-                # 5. Panggil generator PDF
+                # Panggil generator PDF
                 generate_laporan_per_teller(
                     teller=teller, transactions_list=all_teller_transactions,
                     tanggal_mulai=tanggal_mulai, tanggal_akhir=tanggal_akhir,
                     save_path=save_path, dicetak_oleh=dicetak_oleh
                 )
 
-                # 6. Tampilkan pesan sukses dan tawarkan untuk membuka file
+                # Tampilkan pesan sukses dan tawarkan untuk membuka file
                 reply = QMessageBox.information(
-                    self, "Sukses", f"Laporan untuk teller {teller.nama_lengkap} berhasil dicetak.",
+                    self, "Sukses", f"Laporan untuk {teller.nama_lengkap} berhasil dicetak.",
                     QMessageBox.Ok | QMessageBox.Open, QMessageBox.Ok
                 )
                 if reply == QMessageBox.Open:
                     os.startfile(save_path)
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Gagal mencetak laporan teller:\n{e}")
+            QMessageBox.critical(self, "Error", f"Gagal mencetak laporan:\n{e}")

@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Optional
 
 from PySide2.QtCore import Qt
-from PySide2.QtGui import QDoubleValidator
+from PySide2.QtGui import QIntValidator
 from PySide2.QtWidgets import (
     QFormLayout,
     QGroupBox,
@@ -71,6 +71,7 @@ class AccountCreateWidget(QWidget):
         self.nis_nasabah_input = QLineEdit()
         self.nis_nasabah_input.setPlaceholderText("Opsional")
         self.kelas_nasabah_input = QLineEdit()
+        self.kelas_nasabah_input.setValidator(QIntValidator(1, 12))
 
         # --- Tombol Aksi dan Label Status ---
         self.create_button = QPushButton("Buka Rekening")
@@ -99,11 +100,12 @@ class AccountCreateWidget(QWidget):
         # Ambil semua input dari form
         nama_nasabah = self.nama_nasabah_input.text().strip()
         nis_nasabah = self.nis_nasabah_input.text().strip() or None
-        kelas_nasabah = self.kelas_nasabah_input.text().strip()
+        kelas_nasabah_text = self.kelas_nasabah_input.text().strip()
+        kelas_nasabah = int(kelas_nasabah_text) if kelas_nasabah_text else None
 
         # 1. Validasi field wajib
-        if not all([nama_nasabah, kelas_nasabah]):
-            self.status_label.setText("Nama dan Kelas Nasabah wajib diisi.")
+        if not nama_nasabah:
+            self.status_label.setText("Nama Nasabah wajib diisi.")
             self.status_label.setStyleSheet("color: red;")
             return
 

@@ -47,7 +47,7 @@ class UserManagementWidget(QWidget):
         main_layout = QHBoxLayout(self)
 
         # --- Bagian KIRI: Tabel User ---
-        table_group = QGroupBox("Daftar User")
+        table_group = QGroupBox("Daftar Admin & Superadmin")
         table_layout = QVBoxLayout(table_group)
 
         # Checkbox untuk menampilkan user yang sudah dihapus (soft-delete)
@@ -91,11 +91,9 @@ class UserManagementWidget(QWidget):
         self.password_input.setEchoMode(QLineEdit.Password)
         self.nama_lengkap_input = QLineEdit()
         self.role_combo = QComboBox()
-        self.role_combo.addItems(["admin", "siswa", "superadmin"])
+        self.role_combo.addItems(["admin", "superadmin"])
         self.nomor_induk_input = QLineEdit()
         self.nomor_induk_input.setPlaceholderText("NIP untuk admin, NIS untuk siswa")
-        self.kelas_input = QLineEdit()
-        self.kelas_input.setPlaceholderText("Kosongkan jika bukan siswa")
         self.is_active_checkbox = QCheckBox("Aktif")
 
         # Tombol-tombol aksi
@@ -118,7 +116,6 @@ class UserManagementWidget(QWidget):
         form_layout.addRow("Nama Lengkap:", self.nama_lengkap_input)
         form_layout.addRow("Role:", self.role_combo)
         form_layout.addRow("Nomor Induk (NIP/NIS):", self.nomor_induk_input)
-        form_layout.addRow("Kelas:", self.kelas_input)
         form_layout.addRow("Status:", self.is_active_checkbox)
         form_layout.addRow(action_button_layout)
         form_layout.addRow(self.cancel_button)
@@ -146,8 +143,8 @@ class UserManagementWidget(QWidget):
 
         with SessionLocal() as db:
             # Query semua user, diurutkan berdasarkan ID.
-            # Tambahkan joinedload untuk relasi 'creator' dan 'deleter' agar efisien.
-            stmt = select(User).options(joinedload(User.creator), joinedload(User.deleter))
+            # Tambahkan filter untuk tidak menampilkan role 'siswa' dan joinedload untuk efisiensi.
+            stmt = select(User).where(User.role != 'siswa').options(joinedload(User.creator), joinedload(User.deleter))
 
             # Filter berdasarkan status soft-delete jika checkbox tidak dicentang
             if not self.show_deleted_checkbox.isChecked():
@@ -163,7 +160,7 @@ class UserManagementWidget(QWidget):
                 self.user_table.setItem(row, 2, QTableWidgetItem(user.nama_lengkap))
                 self.user_table.setItem(row, 3, QTableWidgetItem(user.role))
                 self.user_table.setItem(row, 4, QTableWidgetItem(user.nomor_induk or "-"))
-                self.user_table.setItem(row, 5, QTableWidgetItem(user.kelas or "-"))
+                self.user_table.setItem(row, 5, QTableWidgetItem(str(user.kelas) if user.kelas is not None else "-"))
 
                 # Kolom 6: Status (menggabungkan is_deleted dan is_active)
                 status_item = QTableWidgetItem()
@@ -215,7 +212,6 @@ class UserManagementWidget(QWidget):
             self.nama_lengkap_input.setText(user.nama_lengkap)
             self.role_combo.setCurrentText(user.role)
             self.nomor_induk_input.setText(user.nomor_induk or "")
-            self.kelas_input.setText(user.kelas or "")
             self.is_active_checkbox.setChecked(user.is_active)
 
             # Jika user sudah di-soft-delete, buat form read-only
@@ -225,7 +221,6 @@ class UserManagementWidget(QWidget):
                 self.password_input.setEnabled(False)
                 self.role_combo.setEnabled(False)
                 self.nomor_induk_input.setEnabled(False)
-                self.kelas_input.setEnabled(False)
                 self.is_active_checkbox.setEnabled(False)
                 self.save_button.setEnabled(False)
                 self.delete_button.setEnabled(False) # Tidak bisa dihapus lagi
@@ -238,7 +233,6 @@ class UserManagementWidget(QWidget):
                 self.nama_lengkap_input.setEnabled(True)
                 self.password_input.setEnabled(True)
                 self.role_combo.setEnabled(True)
-                self.kelas_input.setEnabled(True)
                 self.is_active_checkbox.setEnabled(True)
                 self.save_button.setEnabled(True)
                 self.save_button.setText("Update User")
@@ -259,7 +253,6 @@ class UserManagementWidget(QWidget):
             password = self.password_input.text()  # Boleh kosong
             role = self.role_combo.currentText()
             nomor_induk = self.nomor_induk_input.text().strip() or None
-            kelas = self.kelas_input.text().strip() or None
             is_active = self.is_active_checkbox.isChecked()
 
             if not nama_lengkap:
@@ -312,7 +305,7 @@ class UserManagementWidget(QWidget):
                 user_to_update.nama_lengkap = nama_lengkap
                 user_to_update.role = role
                 user_to_update.nomor_induk = nomor_induk
-                user_to_update.kelas = kelas if role == 'siswa' else None
+                user_to_update.kelas = None # Superadmin tidak mengelola kelas siswa
                 user_to_update.is_active = is_active
 
                 if password:
@@ -332,7 +325,6 @@ class UserManagementWidget(QWidget):
         nama_lengkap = self.nama_lengkap_input.text().strip()
         role = self.role_combo.currentText()
         nomor_induk = self.nomor_induk_input.text().strip() or None
-        kelas = self.kelas_input.text().strip() or None
 
         if not all([username, password, nama_lengkap]):
             self.status_label.setText("Username, Password, dan Nama harus diisi.")
@@ -379,7 +371,7 @@ class UserManagementWidget(QWidget):
                 nama_lengkap=nama_lengkap,
                 role=role,
                 nomor_induk=nomor_induk,
-                kelas=(kelas if role == 'siswa' else None),
+                kelas=None, # Superadmin tidak mengelola kelas siswa
                 is_active=True,
                 created_by=self.current_user_id
             )
@@ -485,11 +477,10 @@ class UserManagementWidget(QWidget):
         self.password_input.clear()
         self.nama_lengkap_input.clear()
         self.nomor_induk_input.clear()
-        self.kelas_input.clear()
 
         # BUG FIX 1: Pastikan combo box kembali ke state awal
         self.role_combo.clear()
-        self.role_combo.addItems(["admin", "siswa", "superadmin"])
+        self.role_combo.addItems(["admin", "superadmin"])
 
         self.is_active_checkbox.setChecked(True)
         self.status_label.setText("")
@@ -501,7 +492,6 @@ class UserManagementWidget(QWidget):
         self.password_input.setEnabled(True)
         self.role_combo.setEnabled(True)
         self.nomor_induk_input.setEnabled(True)
-        self.kelas_input.setEnabled(True)
         self.is_active_checkbox.setEnabled(True)
         self.password_input.setPlaceholderText("")
         self.save_button.setText("Tambah User")

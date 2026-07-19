@@ -163,3 +163,20 @@ class JournalEntry(Base):
 
     # Relationship ke Transaction
     transaction: Mapped["Transaction"] = relationship(back_populates="journal_entries")
+
+
+class Settings(Base):
+    """
+    Tabel pengaturan aplikasi berbentuk key-value, contoh:
+    key='bulan_cutoff_tahun_ajaran', value='7' (artinya tahun ajaran baru
+    dimulai bulan Juli). Memungkinkan superadmin mengubah pengaturan
+    tanpa perlu ubah kode program.
+    """
+    __tablename__ = "settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    value: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    def __repr__(self):
+        return f"<Setting(key='{self.key}', value='{self.value}')>"
